@@ -1,0 +1,18 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /archivos/{archivoId} {
+      allow read: if true;
+      allow create: if
+        request.resource.data.nombre is string &&
+        request.resource.data.nombre.size() < 200 &&
+        request.resource.data.carpetaId is string &&
+        request.resource.data.tamano is number &&
+        request.resource.data.tamano < 8388608 &&
+        request.resource.data.tipo in ['PDF', 'DOC', 'IMG'];
+      allow update: if false;
+      allow delete: if true;
+    }
+  }
+}
