@@ -6,12 +6,12 @@ import {
 import {
   collection, query, where, orderBy, onSnapshot, addDoc, deleteDoc, doc, serverTimestamp,
 } from "firebase/firestore";
-import { ref, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
-import { db, storage } from "./firebase";
+import { db } from "./firebase";
+import { subirArchivoCloudinary } from "./cloudinary";
 
 /* ============================================================
    BANCO DE APUNTES DIGITALES — CEPAS
-   Centro de Estudiantes — Escuela "Paula Albarracín de Sarmiento"
+   Firestore (lista de archivos) + Cloudinary (archivos físicos)
    ============================================================ */
 
 // ---------- DATOS ----------
@@ -106,8 +106,7 @@ function agruparPorAnio(cursos) {
 }
 
 // ---------- CONFIG ----------
-// Cambiá esta clave antes de publicar el sitio.
-const ADMIN_KEY = "CEPAS2026";
+const ADMIN_KEY = "CEPAS2026"; // Cambiá esto antes de publicar
 const ADMIN_FLAG = "cepas_admin_unlocked";
 const EXT_OK = [".pdf", ".jpg", ".jpeg", ".png", ".doc", ".docx"];
 const MAX_MB = 8;
@@ -294,7 +293,7 @@ function VistaCurso({ curso, onVolver, onMateria }) {
   );
 }
 
-// ---------- MATERIA (Firebase) ----------
+// ---------- MATERIA — Firestore + Cloudinary ----------
 
 function VistaMateria({ curso, materia, onVolver, isAdmin, toast }) {
   const carpetaId = `${slug(curso.id)}__${slug(materia)}`;
@@ -305,7 +304,11 @@ function VistaMateria({ curso, materia, onVolver, isAdmin, toast }) {
 
   useEffect(() => {
     setCargando(true);
-    const q = query(collection(db, "archivos"), where("carpetaId", "==", carpetaId), orderBy("fecha", "desc"));
+    const q = query(
+      collection(db, "archivos"),
+      where("carpetaId", "==", carpetaId),
+      orderBy("fecha", "desc")
+    );
     const unsub = onSnapshot(q,
       (snap) => { setArchivos(snap.docs.map((d) => ({ id: d.id, ...d.data() }))); setCargando(false); },
       () => { setCargando(false); toast("No se pudieron cargar los archivos. Revisá tu conexión.", "error"); }
@@ -317,26 +320,49 @@ function VistaMateria({ curso, materia, onVolver, isAdmin, toast }) {
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
-    if (!extOk(file.name)) { toast("Formato no permitido. Solo PDF, Word o JPG/PNG.", "error"); return; }
-    if (file.size > MAX_MB * 1048576) { toast(`El archivo supera el límite de ${MAX_MB} MB.`, "error"); return; }
+    if (!extOk(file.name)) {
+      toast("Formato no permitido. Solo PDF, Word (.doc/.docx) o JPG/PNG.", "error");
+      return;
+    }
+    if (file.size > MAX_MB * 1048576) {
+      toast(`El archivo supera el límite de ${MAX_MB} MB.`, "error");
+      return;
+    }
+
     setSubiendo(true);
     try {
-      const nombre = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}-${file.name}`;
-      const path = `apuntes/${carpetaId}/${nombre}`;
-      await uploadBytes(ref(storage, path), file);
-      const url = await getDownloadURL(ref(storage, path));
-      await addDoc(collection(db, "archivos"), { carpetaId, nombre: file.name, tipo: icono(file.name), tamano: file.size, url, storagePath: path, fecha: serverTimestamp() });
+      // 1. Subir el archivo a Cloudinary → obtenemos la URL pública
+      const { url, publicId } = await subirArchivoCloudinary(file, carpetaId);
+
+      // 2. Guardar los metadatos en Firestore (sin el archivo en sí)
+      await addDoc(collection(db, "archivos"), {
+        carpetaId,
+        nombre: file.name,
+        tipo: icono(file.name),
+        tamano: file.size,
+        url,           // URL pública de Cloudinary
+        publicId,      // ID de Cloudinary (para referencia futura)
+        fecha: serverTimestamp(),
+      });
+
       toast("Archivo subido correctamente.");
-    } catch { toast("No se pudo subir el archivo. Intentá de nuevo.", "error"); }
-    finally { setSubiendo(false); }
+    } catch (err) {
+      console.error(err);
+      toast("No se pudo subir el archivo. Revisá tu conexión e intentá de nuevo.", "error");
+    } finally {
+      setSubiendo(false);
+    }
   };
 
-  const eliminar = async (a) => {
+  const eliminar = async (archivo) => {
     try {
-      if (a.storagePath) await deleteObject(ref(storage, a.storagePath)).catch(() => {});
-      await deleteDoc(doc(db, "archivos", a.id));
-      toast("Archivo eliminado.", "info");
-    } catch { toast("No se pudo eliminar.", "error"); }
+      // Eliminamos el registro de Firestore (el archivo queda en Cloudinary
+      // pero deja de aparecer en el sitio — ver nota en cloudinary.js)
+      await deleteDoc(doc(db, "archivos", archivo.id));
+      toast("Archivo eliminado del sitio.", "info");
+    } catch {
+      toast("No se pudo eliminar el archivo.", "error");
+    }
   };
 
   return (
@@ -344,20 +370,33 @@ function VistaMateria({ curso, materia, onVolver, isAdmin, toast }) {
       <Volver onClick={onVolver} label={`Volver a ${curso.nombre}`} />
       <h2 style={s.h2}>{materia}</h2>
       <p style={s.sub}>{curso.nombre}{curso.sub ? ` · ${curso.sub}` : ""}</p>
+
       <div style={s.subidaBox}>
-        <div style={s.subidaTexto}><strong>Formatos aceptados:</strong> PDF, Word (.doc / .docx), JPG o PNG. Máximo {MAX_MB} MB por archivo.</div>
+        <div style={s.subidaTexto}>
+          <strong>Formatos aceptados:</strong> PDF, Word (.doc / .docx), JPG o PNG. Máximo {MAX_MB} MB por archivo.
+        </div>
         <button style={s.subirBtn} onClick={() => inputRef.current?.click()} disabled={subiendo}>
           <Upload size={18} />{subiendo ? "Subiendo..." : "Subir archivo"}
         </button>
-        <input ref={inputRef} type="file" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" style={{ display: "none" }} onChange={subirArchivo} />
+        <input ref={inputRef} type="file"
+          accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+          style={{ display: "none" }} onChange={subirArchivo} />
       </div>
+
       {cargando ? (
         <p style={{ color: c.suave, padding: "20px 0" }}>Cargando archivos...</p>
       ) : archivos.length === 0 ? (
-        <div style={s.vacio}><FileText size={28} strokeWidth={1.5} color={c.azulMedio} /><p style={{ color: c.suave, fontSize: 14, maxWidth: 340, margin: "10px auto 0" }}>Todavía no hay archivos en esta materia. ¡Sé el primero en subir algo!</p></div>
+        <div style={s.vacio}>
+          <FileText size={28} strokeWidth={1.5} color={c.azulMedio} />
+          <p style={{ color: c.suave, fontSize: 14, maxWidth: 340, margin: "10px auto 0" }}>
+            Todavía no hay archivos en esta materia. ¡Sé el primero en subir algo!
+          </p>
+        </div>
       ) : (
         <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: 8 }}>
-          {archivos.map((a) => <ArchivoItem key={a.id} archivo={a} isAdmin={isAdmin} onEliminar={() => eliminar(a)} />)}
+          {archivos.map((a) => (
+            <ArchivoItem key={a.id} archivo={a} isAdmin={isAdmin} onEliminar={() => eliminar(a)} />
+          ))}
         </ul>
       )}
     </div>
@@ -372,14 +411,18 @@ function ArchivoItem({ archivo, isAdmin, onEliminar }) {
       <a href={archivo.url} target="_blank" rel="noopener noreferrer" style={s.archivoLink}>
         <span style={{ ...s.tipoTag, ...tipoColor(archivo.tipo) }}>{archivo.tipo}</span>
         <span style={s.archivoNombre}>{archivo.nombre}</span>
-        <span style={{ fontSize: 12, color: c.suave, flexShrink: 0 }}>{fmtBytes(archivo.tamano)}{fecha ? ` · ${fecha}` : ""}</span>
+        <span style={{ fontSize: 12, color: c.suave, flexShrink: 0 }}>
+          {fmtBytes(archivo.tamano)}{fecha ? ` · ${fecha}` : ""}
+        </span>
       </a>
       {isAdmin && (confirm
-        ? <span style={{ display: "flex", gap: 6 }}>
+        ? <span style={{ display: "flex", gap: 6, flexShrink: 0 }}>
             <button style={s.btnBorrarSi} onClick={onEliminar}>Borrar</button>
             <button style={s.btnBorrarNo} onClick={() => setConfirm(false)}>Cancelar</button>
           </span>
-        : <button style={s.btnTrash} onClick={() => setConfirm(true)}><Trash2 size={16} /></button>
+        : <button style={s.btnTrash} onClick={() => setConfirm(true)} title="Eliminar archivo">
+            <Trash2 size={16} />
+          </button>
       )}
     </li>
   );
@@ -394,11 +437,11 @@ function tipoColor(t) {
 // ---------- DUDAS ----------
 
 const FAQS = [
-  { q: "¿Quién puede subir archivos?", a: "Cualquier estudiante que tenga el link. No hace falta registrarse." },
-  { q: "¿En qué formato tengo que subir los archivos?", a: "Solo se aceptan PDF, Word (.doc o .docx) o imágenes JPG/PNG. Si tenés el apunte en otro formato, lo más simple es sacarle una foto o exportarlo a PDF." },
-  { q: "¿Puedo borrar un archivo que subí por error?", a: "La eliminación está reservada al administrador del sitio. Si subiste algo por error, escribí al contacto de esta sección para que lo revisen." },
-  { q: "¿Hay límite de tamaño por archivo?", a: "Sí, 8 MB. Si es más pesado, probá comprimir el PDF o reducir la calidad de la imagen." },
-  { q: "Curso 4°, 5° o 6°: ¿por qué no aparece mi orientación?", a: "Economía y Administración solo está en Turno Mañana, y Arte solo en Turno Tarde. Ciencias Sociales y Naturales están en ambos turnos." },
+  { q: "¿Quién puede subir archivos?", a: "Cualquier estudiante que tenga el link. No hace falta registrarse ni crear una cuenta." },
+  { q: "¿En qué formato tengo que subir los archivos?", a: "Solo se aceptan PDF, Word (.doc o .docx) o imágenes JPG/PNG. Si tenés el apunte en otro formato, lo más simple es sacarle una foto o exportarlo a PDF antes de subirlo." },
+  { q: "¿Puedo borrar un archivo que subí por error?", a: "La eliminación está reservada al administrador del sitio para mantener todo ordenado. Si subiste algo por error, escribí al contacto de esta sección para que lo revisen." },
+  { q: "¿Hay límite de tamaño por archivo?", a: "Sí, 8 MB por archivo. Si es más pesado, probá comprimir el PDF o reducir la calidad de la imagen antes de subirlo." },
+  { q: "Curso 4°, 5° o 6°: ¿por qué no aparece mi orientación en el turno que curso?", a: "Economía y Administración solo está en Turno Mañana, y Arte solo en Turno Tarde. Ciencias Sociales y Naturales están disponibles en ambos turnos." },
 ];
 
 function VistaDudas() {
@@ -411,7 +454,9 @@ function VistaDudas() {
         <Phone size={20} strokeWidth={2} color={c.azulOscuro} />
         <div>
           <div style={{ fontWeight: 700, color: c.azulOscuro, marginBottom: 4 }}>¿No encontrás la respuesta?</div>
-          <div style={{ fontSize: 14, color: c.suave }}>Escribinos por WhatsApp al <strong>[completar número de contacto]</strong></div>
+          <div style={{ fontSize: 14, color: c.suave }}>
+            Escribinos por WhatsApp al <strong>[completar número de contacto]</strong>
+          </div>
         </div>
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -422,12 +467,14 @@ function VistaDudas() {
               <span style={{ flex: 1 }}>{f.q}</span>
               <span style={{ fontSize: 18, color: c.azulOscuro }}>{abierto === i ? "–" : "+"}</span>
             </button>
-            {abierto === i && <div style={{ padding: "0 16px 16px 42px", fontSize: 13.5, color: c.suave, lineHeight: 1.6 }}>{f.a}</div>}
+            {abierto === i && (
+              <div style={{ padding: "0 16px 16px 42px", fontSize: 13.5, color: c.suave, lineHeight: 1.6 }}>{f.a}</div>
+            )}
           </div>
         ))}
       </div>
       <p style={{ marginTop: 24, fontSize: 12.5, color: c.suave, fontStyle: "italic" }}>
-        El número de contacto y las preguntas frecuentes se editan directamente en el código (src/App.jsx).
+        El número de contacto y las preguntas frecuentes se editan en el código (src/App.jsx), buscando FAQS y el texto del número.
       </p>
     </div>
   );
@@ -446,21 +493,30 @@ function Volver({ onClick, label }) {
 function Toast({ msg, tipo }) {
   const bg = tipo === "error" ? "#A33A3A" : tipo === "info" ? c.azulOscuro : "#3F7A4D";
   const Icon = tipo === "error" || tipo === "info" ? AlertCircle : CheckCircle2;
-  return <div style={{ ...s.toast, background: bg }}><Icon size={16} />{msg}</div>;
+  return (
+    <div style={{ ...s.toast, background: bg }}>
+      <Icon size={16} />{msg}
+    </div>
+  );
 }
 
 function AdminModal({ onClose, onOk }) {
   const [clave, setClave] = useState("");
   const [err, setErr] = useState(false);
-  const intentar = () => { if (clave === ADMIN_KEY) { lsSet(ADMIN_FLAG, "true"); onOk(); } else setErr(true); };
+  const intentar = () => {
+    if (clave === ADMIN_KEY) { lsSet(ADMIN_FLAG, "true"); onOk(); }
+    else setErr(true);
+  };
   return (
     <div style={s.overlay} onClick={onClose}>
       <div style={s.modal} onClick={(e) => e.stopPropagation()}>
         <button onClick={onClose} style={{ position: "absolute", top: 12, right: 12, border: "none", background: "none", cursor: "pointer", color: c.suave }}><X size={18} /></button>
         <Lock size={22} strokeWidth={1.8} color={c.azulOscuro} />
         <h3 style={{ color: c.azulOscuro, margin: "10px 0 6px" }}>Acceso de administrador</h3>
-        <p style={{ fontSize: 13, color: c.suave, marginBottom: 16, lineHeight: 1.5 }}>Esta clave habilita la opción de eliminar archivos.</p>
-        <input type="password" value={clave} onChange={(e) => { setClave(e.target.value); setErr(false); }} onKeyDown={(e) => e.key === "Enter" && intentar()}
+        <p style={{ fontSize: 13, color: c.suave, marginBottom: 16, lineHeight: 1.5 }}>Esta clave habilita la opción de eliminar archivos del sitio.</p>
+        <input type="password" value={clave}
+          onChange={(e) => { setClave(e.target.value); setErr(false); }}
+          onKeyDown={(e) => e.key === "Enter" && intentar()}
           placeholder="Clave de administrador" autoFocus
           style={{ width: "100%", padding: "11px 14px", borderRadius: 8, border: `1px solid ${err ? "#A33A3A" : c.borde}`, fontSize: 14, marginBottom: 8, boxSizing: "border-box", fontFamily: "inherit" }} />
         {err && <p style={{ color: "#A33A3A", fontSize: 12.5, margin: "0 0 10px" }}>Clave incorrecta.</p>}
