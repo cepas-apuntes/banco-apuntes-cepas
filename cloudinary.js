@@ -7,8 +7,8 @@
 //   CLOUD_NAME   → lo ves en el dashboard de Cloudinary, arriba a la izquierda
 //   UPLOAD_PRESET → lo creás vos en Settings → Upload → Add upload preset (ver guía Parte 2)
 
-const CLOUD_NAME = "TU_CLOUD_NAME";
-const UPLOAD_PRESET = "TU_UPLOAD_PRESET";
+const CLOUD_NAME = "tfzktsxh";
+const UPLOAD_PRESET = "p0j8jlhf";
 
 /**
  * Sube un archivo a Cloudinary y devuelve la URL pública.
