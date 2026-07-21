@@ -14,12 +14,12 @@ import { getFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 
 const firebaseConfig = {
-  apiKey: "TU_API_KEY_AQUI",
-  authDomain: "TU_PROYECTO.firebaseapp.com",
-  projectId: "TU_PROYECTO",
-  storageBucket: "TU_PROYECTO.firebasestorage.app",
-  messagingSenderId: "TU_SENDER_ID",
-  appId: "TU_APP_ID",
+  apiKey: "AIzaSyCvB0FD6h9Qz2u9cjFzZYtjSLqnX2rFDY4",
+  authDomain: "apuntes-digitales-cepas.firebaseapp.com",
+  projectId: "apuntes-digitales-cepas",
+  storageBucket: "apuntes-digitales-cepas.firebasestorage.app",
+  messagingSenderId: "793649070681",
+  appId: "1:793649070681:web:90e2e28b9eb48c8904e748",
 };
 
 const app = initializeApp(firebaseConfig);
