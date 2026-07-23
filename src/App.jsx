@@ -16,9 +16,30 @@ import { subirArchivoCloudinary } from "./cloudinary";
 
 // ---------- DATOS ----------
 
-const MATERIAS_BASE = [
-  "Prácticas del Lenguaje", "Matemática", "Físico-Química",
-  "Geografía", "Historia", "Biología", "Informática", "Construcción de Ciudadanía",
+const MATERIAS_1 = [
+  "Prácticas del Lenguaje",
+  "Matemática",
+  "Ciencias Naturales",
+  "Ciencias Sociales",
+  "Educación Física",
+  "Educación Artística",
+  "Construcción de Ciudadanía",
+  "Inglés",
+  "Informática",
+];
+
+const MATERIAS_2_3 = [
+  "Prácticas del Lenguaje",
+  "Matemática",
+  "Biología",
+  "Físico-Química",
+  "Historia",
+  "Geografía",
+  "Educación Física",
+  "Educación Artística",
+  "Construcción de Ciudadanía",
+  "Inglés",
+  "Informática",
 ];
 
 const DIVISIONES = ["A", "B", "C", "D", "E", "F"];
@@ -26,28 +47,70 @@ const DIVISIONES = ["A", "B", "C", "D", "E", "F"];
 const cursosCicloBasico = [];
 [1, 2, 3].forEach((anio) => {
   DIVISIONES.forEach((div) => {
-    const arteOMusica = anio === 2 ? "Música" : "Arte";
+    const materias = anio === 1 ? MATERIAS_1 : MATERIAS_2_3;
     cursosCicloBasico.push({
       id: `${anio}${div}`,
       nombre: `${anio}°${div}`,
       anio,
       ciclo: "basico",
-      materias: [...MATERIAS_BASE, arteOMusica].map((m) => ({ nombre: m })),
+      materias: materias.map((m) => ({ nombre: m })),
     });
   });
 });
 
-const FORMACION_COMUN = [
-  "Arte", "Biología", "Educación Física", "Filosofía", "Geografía", "Historia",
-  "Inglés", "Introducción a la Física", "Introducción a la Química", "Literatura",
-  "Matemática", "Política y Ciudadanía", "Salud y Adolescencia", "NTICX", "Trabajo y Ciudadanía",
-];
+// Materias troncales por año — varían según el año, no la orientación
+// (las específicas de cada orientación se agregan abajo)
+
+function troncalesPorAnioYOrientacion(anio, orientacionKey) {
+  // Materias presentes en TODOS los años y orientaciones
+  const siempre = ["Literatura", "Matemática", "Inglés", "Educación Física"];
+
+  const por4 = [
+    ...siempre,
+    "Biología",           // todos en 4to
+    "Historia",           // todos en 4to
+    "Geografía",          // todos en 4to
+    "Salud y Adolescencia", // solo 4to
+    "NTICX",              // solo 4to
+    "Introducción a la Física", // todos en 4to (no se repite)
+    // Intro a la Química: solo Naturales en 4to (el resto en 5to)
+    ...(orientacionKey === "naturales" ? ["Introducción a la Química"] : []),
+  ];
+
+  const por5 = [
+    ...siempre,
+    "Historia",           // todos en 5to
+    "Geografía",          // todos hasta 5to (Sociales la tiene en 6to igual)
+    "Política y Ciudadanía", // solo 5to
+    // Arte: solo Naturales en 5to
+    ...(orientacionKey === "naturales" ? ["Arte"] : []),
+    // Intro a la Química: todos en 5to menos Naturales (que ya la tuvo en 4to)
+    ...(orientacionKey !== "naturales" ? ["Introducción a la Química"] : []),
+    // Biología en Naturales continúa en 5to (las específicas la incluyen)
+  ];
+
+  const por6 = [
+    ...siempre,
+    "Filosofía",          // todos en 6to
+    "Trabajo y Ciudadanía", // solo 6to
+    // Arte: todas las orientaciones en 6to MENOS Naturales
+    ...(orientacionKey !== "naturales" ? ["Arte"] : []),
+    // Historia: solo Arte y Sociales en 6to
+    ...(orientacionKey === "arte" || orientacionKey === "sociales" ? ["Historia"] : []),
+    // Geografía: solo Sociales en 6to
+    ...(orientacionKey === "sociales" ? ["Geografía"] : []),
+  ];
+
+  if (anio === 4) return por4;
+  if (anio === 5) return por5;
+  return por6;
+}
 
 const ORIENTACIONES = {
   naturales: {
     nombre: "Ciencias Naturales", turnos: ["Mañana", "Tarde"],
     especificas: {
-      4: ["Introducción a la Química"],
+      4: [],
       5: ["Fundamentos de Química", "Física", "Biología", "Ciencias de la Tierra"],
       6: ["Química del Carbono", "Biología, genética y sociedad", "Física clásica y moderna", "Ambiente, desarrollo y sociedad"],
     },
@@ -57,7 +120,7 @@ const ORIENTACIONES = {
     especificas: {
       4: ["Psicología"],
       5: ["Comunicación, cultura y sociedad", "Economía Política", "Sociología"],
-      6: ["Historia", "Geografía", "Proyecto de investigación en Ciencias Sociales"],
+      6: ["Proyecto de investigación en Ciencias Sociales"],
     },
   },
   economia: {
@@ -73,7 +136,7 @@ const ORIENTACIONES = {
     especificas: {
       4: ["Producción y análisis de la imagen"],
       5: ["Lenguaje Complementario", "Imagen y nuevos medios", "Imagen y procedimientos constructivos"],
-      6: ["Historia", "Arte (Lenguaje Complementario)", "Proyecto de producción en artes visuales"],
+      6: ["Arte (Lenguaje Complementario)", "Proyecto de producción en artes visuales"],
     },
   },
 };
@@ -82,16 +145,15 @@ const cursosCicloSuperior = [];
 [4, 5, 6].forEach((anio) => {
   Object.entries(ORIENTACIONES).forEach(([key, orient]) => {
     orient.turnos.forEach((turno) => {
+      const troncales = troncalesPorAnioYOrientacion(anio, key).map((m) => ({ nombre: m }));
+      const especificas = orient.especificas[anio].map((m) => ({ nombre: m, especifica: true }));
       cursosCicloSuperior.push({
         id: `${anio}-${key}-${turno}`,
         nombre: `${anio}° ${orient.nombre}`,
         sub: `Turno ${turno}`,
         anio,
         ciclo: "superior",
-        materias: [
-          ...FORMACION_COMUN.map((m) => ({ nombre: m })),
-          ...orient.especificas[anio].map((m) => ({ nombre: m, especifica: true })),
-        ],
+        materias: [...troncales, ...especificas],
       });
     });
   });
