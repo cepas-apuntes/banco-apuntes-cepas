@@ -142,7 +142,26 @@ export default function App() {
   const [showAdmin, setShowAdmin] = useState(false);
   const [toast, setToast] = useState(null);
 
-  useEffect(() => { if (lsGet(ADMIN_FLAG) === "true") setIsAdmin(true); }, []);
+  // Restaurar posición desde el hash de la URL al cargar
+  useEffect(() => {
+    if (lsGet(ADMIN_FLAG) === "true") setIsAdmin(true);
+    const hash = window.location.hash.replace("#", "");
+    if (!hash) return;
+    try {
+      const estado = JSON.parse(decodeURIComponent(hash));
+      if (estado.vista) setVista(estado.vista);
+      if (estado.curso) setCursoActivo(estado.curso);
+      if (estado.materia) setMateriaActiva(estado.materia);
+    } catch {}
+  }, []);
+
+  // Guardar posición en el hash de la URL cada vez que cambia
+  useEffect(() => {
+    const estado = { vista };
+    if (cursoActivo) estado.curso = cursoActivo;
+    if (materiaActiva) estado.materia = materiaActiva;
+    window.location.hash = encodeURIComponent(JSON.stringify(estado));
+  }, [vista, cursoActivo, materiaActiva]);
 
   const toastMsg = useCallback((msg, tipo = "ok") => {
     setToast({ msg, tipo });
@@ -300,6 +319,7 @@ function VistaMateria({ curso, materia, onVolver, isAdmin, toast }) {
   const [archivos, setArchivos] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [subiendo, setSubiendo] = useState(false);
+  const [showPopup, setShowPopup] = useState(false);
   const inputRef = useRef(null);
 
   useEffect(() => {
@@ -375,12 +395,15 @@ function VistaMateria({ curso, materia, onVolver, isAdmin, toast }) {
         <div style={s.subidaTexto}>
           <strong>Formatos aceptados:</strong> PDF, Word (.doc / .docx), JPG o PNG. Máximo {MAX_MB} MB por archivo.
         </div>
-        <button style={s.subirBtn} onClick={() => inputRef.current?.click()} disabled={subiendo}>
+        <button style={s.subirBtn} onClick={() => setShowPopup(true)} disabled={subiendo}>
           <Upload size={18} />{subiendo ? "Subiendo..." : "Subir archivo"}
         </button>
         <input ref={inputRef} type="file"
           accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
           style={{ display: "none" }} onChange={subirArchivo} />
+        {showPopup && (
+          <PopupAviso onConfirmar={() => { setShowPopup(false); inputRef.current?.click(); }} onCancelar={() => setShowPopup(false)} />
+        )}
       </div>
 
       {cargando ? (
@@ -521,6 +544,40 @@ function AdminModal({ onClose, onOk }) {
           style={{ width: "100%", padding: "11px 14px", borderRadius: 8, border: `1px solid ${err ? "#A33A3A" : c.borde}`, fontSize: 14, marginBottom: 8, boxSizing: "border-box", fontFamily: "inherit" }} />
         {err && <p style={{ color: "#A33A3A", fontSize: 12.5, margin: "0 0 10px" }}>Clave incorrecta.</p>}
         <button onClick={intentar} style={{ width: "100%", background: c.azulOscuro, color: "#fff", border: "none", borderRadius: 8, padding: "11px 0", fontSize: 14.5, fontWeight: 700, cursor: "pointer" }}>Ingresar</button>
+      </div>
+    </div>
+  );
+}
+
+// ---------- POPUP AVISO ----------
+
+function PopupAviso({ onConfirmar, onCancelar }) {
+  return (
+    <div style={s.overlay} onClick={onCancelar}>
+      <div style={s.modal} onClick={(e) => e.stopPropagation()}>
+        <button onClick={onCancelar} style={{ position: "absolute", top: 12, right: 12, border: "none", background: "none", cursor: "pointer", color: c.suave }}><X size={18} /></button>
+        <Upload size={26} strokeWidth={1.8} color={c.azulOscuro} />
+        <h3 style={{ color: c.azulOscuro, margin: "10px 0 8px", fontSize: 18 }}>Antes de subir tu archivo</h3>
+        <p style={{ fontSize: 14, color: c.suave, lineHeight: 1.6, margin: "0 0 10px" }}>
+          Asegurate de que el <strong>nombre del archivo</strong> describa claramente su contenido.
+        </p>
+        <p style={{ fontSize: 13.5, color: c.suave, lineHeight: 1.6, margin: "0 0 20px", background: c.beigeCard, borderRadius: 8, padding: "10px 12px", border: `1px solid ${c.borde}` }}>
+          Ejemplos de buenos nombres:<br />
+          <strong>resumen-revolucion-francesa.pdf</strong><br />
+          <strong>guia-funciones-matematica.docx</strong><br />
+          <strong>examen-2023-biologia.pdf</strong>
+        </p>
+        <p style={{ fontSize: 13, color: c.suave, margin: "0 0 20px" }}>
+          Un buen nombre hace que todos encuentren el archivo fácilmente.
+        </p>
+        <div style={{ display: "flex", gap: 10 }}>
+          <button onClick={onCancelar} style={{ flex: 1, border: `1px solid ${c.borde}`, background: "#fff", color: c.suave, borderRadius: 8, padding: "10px 0", fontSize: 14, cursor: "pointer" }}>
+            Cancelar
+          </button>
+          <button onClick={onConfirmar} style={{ flex: 2, background: c.azulOscuro, color: "#fff", border: "none", borderRadius: 8, padding: "10px 0", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>
+            Entendido, elegir archivo
+          </button>
+        </div>
       </div>
     </div>
   );
