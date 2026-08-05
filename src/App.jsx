@@ -298,6 +298,7 @@ function VistaInicio({ onAnios }) {
   return (
     <div style={{ textAlign: "center" }}>
       <h1 style={s.titulo}>Banco de Apuntes Digitales</h1>
+      <p style={{ fontFamily: "Georgia, serif", fontSize: 15, color: c.suave, margin: "-10px 0 28px", fontStyle: "italic" }}>Primera Versión — Agrupación Bocanada</p>
       <p style={s.lead}>Un archivero compartido entre todos los y las estudiantes: resúmenes, guías, líneas de tiempo, exámenes anteriores y apuntes de clase, ordenados por curso y materia.</p>
       <div style={s.cards}>
         {[
@@ -540,7 +541,7 @@ function VistaDudas() {
         <div>
           <div style={{ fontWeight: 700, color: c.azulOscuro, marginBottom: 4 }}>¿No encontrás la respuesta?</div>
           <div style={{ fontSize: 14, color: c.suave }}>
-            Escribinos por WhatsApp al <strong>[completar número de contacto]</strong>
+            Escribinos por WhatsApp al <strong>11 2746-7246 (Mati)</strong>
           </div>
         </div>
       </div>
@@ -558,9 +559,7 @@ function VistaDudas() {
           </div>
         ))}
       </div>
-      <p style={{ marginTop: 24, fontSize: 12.5, color: c.suave, fontStyle: "italic" }}>
-        El número de contacto y las preguntas frecuentes se editan en el código (src/App.jsx), buscando FAQS y el texto del número.
-      </p>
+      
     </div>
   );
 }
